@@ -9,6 +9,8 @@ I've modified it to include a simple webserver with a method to allow playing a 
   * The `<url-of-file>` can either be /data/xy.mp3 or http(s)://url-to-xy.mp3
 
 
+A swagger interface is available at: `http://<server>:<port>/api/doc`
+
 Run the image:
 
 ```bash
