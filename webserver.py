@@ -400,7 +400,6 @@ async def playsound(request):
 
     loop = asyncio.get_event_loop()
 
-    #address = request.match_info["address"]
     device_id = request.match_info["id"]
     url = request.match_info["url"]
 
@@ -432,70 +431,7 @@ async def playsound(request):
 
 # ******************************************************************************
 
-@routes.get("/playit/{address}/{url}")
-async def playit(request):
-    """
-    ---
-    description: Connect to a device
-    tags:
-    - playit
-    produces:
-    - text/json
-    parameters:
-      - in: path
-        name: address
-        description: ipaddress
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: url
-        description: url of mp3
-        required: true
-        schema:
-          type: string
-    responses:
-        "200":
-            description: successful operation. Return "pong" text
-        "405":
-            description: invalid HTTP Method
-    """
-
-    loop = asyncio.get_event_loop()
-
-    address = request.match_info["address"]
-    url = request.match_info["url"]
-
-    atvs = await pyatv.scan(loop, hosts=[address], timeout=5)
-
-    if not atvs:
-        return web.json_response(
-          output(False, error="Device not found")
-      )
-
-    conf = atvs[0]
-    atv = await pyatv.connect(conf, loop)
-
-    # listener = PushUpdatePrinter()
-    # atv.push_updater.listener = listener
-    # atv.push_updater.start()
-
-    try:
-        #print("* Starting to stream", filename)
-        await atv.stream.stream_file(url)
-        await asyncio.sleep(1)
-    finally:
-        atv.close()
-
-    return web.json_response(output(True, values={"played": "jingle"}))
-
-
-
-
 ##############################################################################################################
-
-
-
 
 @routes.get("/close/{id}")
 @web_command
@@ -519,29 +455,29 @@ async def close_connection(request, atv):
 
 
 
-@routes.get("/command/{id}/{command}")
-@web_command
-async def command(request, atv):
+@routes.get("/setvolume/{id}/{volumepercent}")
+#@web_command
+async def command(request):
     """
     ---
-    description: send command
+    description: set volume
     tags:
-    - command
+    - setvolume
     produces:
     - text/json
     parameters:
-      - in: query
+      - in: path
         name: id
         description: deviceId
         required: true
         schema:
           type: string
-      - in: query
-        name: command
-        description: command, one of [audio|ctrl|power|stream|apps]
+      - in: path
+        name: volumepercent
+        description: volumepercent
         required: true
         schema:
-          type: string
+          type: number
     responses:
         "200":
             description: successful operation. Return "pong" text
@@ -549,37 +485,33 @@ async def command(request, atv):
             description: invalid HTTP Method
     """
 
-    def _command(command):
-        ctrl = retrieve_commands(RemoteControl)
-        power = retrieve_commands(Power)
-        stream = retrieve_commands(Stream)
-        apps = retrieve_commands(Apps)
-        audio = retrieve_commands(Audio)
-        if command in audio:
-            return atv.audio
-        if command in ctrl:
-            return atv.remote_control
-        if command in power:
-            return atv.power
-        if command in stream:
-            return atv.stream
-        if command in apps:
-            return atv.apps
-        return None
+    loop = asyncio.get_event_loop()
+    
+    device_id = request.match_info["id"]
+    volumepercent = request.match_info["volumepercent"]
+    level = float(volumepercent)
+    
+    atv = None
 
-    command = request.match_info["command"]
-
+    if device_id in request.app["atv"]:
+        atv = request.app["atv"][device_id]
+    else:
+        atvs = await pyatv.scan(loop, identifier=device_id, timeout=5)        
+        if not atvs:
+            return web.json_response(
+                output(False, error="Device not found"))
+            
+        conf = atvs[0]
+        atv = await pyatv.connect(conf, loop)
+    
     try:
-        object = _command(command=command)
-        if object:
-            await getattr(object, command)()
-            return web.json_response(output(True, values={"command": command}))
-    except Exception as ex:
-        return web.json_response(
-            output(False, error="failed_command", exception=ex)
-        )
+        await atv.audio.set_volume(level)
+    finally:
+        atv.close()
 
-    return web.json_response(output(False, error="unsupported_command"))
+    return web.json_response(output(True, values={"volume": volumepercent}))
+
+        
 
 
 @routes.get("/playing/{id}")
