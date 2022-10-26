@@ -366,6 +366,99 @@ async def connect(request):
     request.app["atv"][device_id] = atv
     return web.json_response(output(True, values={"connection": "connected"}))
 
+
+## _________________________________________________________________________________________________________
+@routes.get("/playfile/{id}")
+async def playfile(request):
+    """
+    ---
+    description: Connect to a device
+    tags:
+    - playfile
+    produces:
+    - text/json
+    parameters:
+      - in: path
+        name: id
+        description: device_id
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: url
+        description: url of mp3
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: volumepercent
+        description: volume in percent [0.0 - 100.0]
+        required: false
+        schema:
+          type: number
+    responses:
+        "200":
+            description: successful operation. Played url on device
+        "405":
+            description: invalid HTTP Method
+    """
+
+    loop = asyncio.get_event_loop()
+
+    device_id = request.match_info["id"]
+    url = request.rel_url.query['url']
+    volumepercent = request.rel_url.query['volumepercent']
+    volume = None
+
+    if volumepercent is not None:
+        volume = float(volumepercent)
+
+    atv = None
+
+    if device_id in request.app["atv"]:
+        atv = request.app["atv"][device_id]
+    else:
+        atvs = await pyatv.scan(loop, identifier=device_id, timeout=5)        
+        if not atvs:
+            return web.json_response(
+                output(False, error="Device not found"))
+            
+        conf = atvs[0]
+        atv = await pyatv.connect(conf, loop)
+
+    # listener = PushUpdatePrinter()
+    # atv.push_updater.listener = listener
+    # atv.push_updater.start()
+
+    try:
+        previousVolume = atv.audio.volume
+
+        """
+        if volume is not None:
+            await atv.audio.set_volume(volume)
+            await asyncio.sleep(1)
+        """
+
+        await atv.stream.stream_file(url)
+        await asyncio.sleep(1)
+
+        """
+        if volume is not None:
+            await atv.audio.set_volume(previousVolume)
+        await asyncio.sleep(1)
+        """
+    except Exception as ex:
+        return web.json_response(
+            output(False, error="Error", exception=ex)
+        )
+    finally:
+        atv.close()
+
+    return web.json_response(output(True, values={"played": url}))
+## _________________________________________________________________________________________________________
+
+
+
 ##############################################################################################################
 #http://192.168.1.98:8080/playit/192.168.1.21/{url}?address=192.168.1.214&url=%2Fhome%2Fjingle.mp3
 
@@ -486,13 +579,13 @@ async def command(request):
     """
 
     loop = asyncio.get_event_loop()
-    
+        
     device_id = request.match_info["id"]
     volumepercent = request.match_info["volumepercent"]
     level = float(volumepercent)
     
     atv = None
-
+    
     if device_id in request.app["atv"]:
         atv = request.app["atv"][device_id]
     else:
@@ -505,6 +598,7 @@ async def command(request):
         atv = await pyatv.connect(conf, loop)
     
     try:
+        #currentVolme = atv.audio.volume
         await atv.audio.set_volume(level)
     finally:
         atv.close()
@@ -574,7 +668,7 @@ async def on_shutdown(app: web.Application) -> None:
 
 def main():
     host = os.environ.get("HOST", "0.0.0.0")
-    port = os.environ.get("PORT", 8080)
+    port = os.environ.get("PORT", 8081)
 
     access_log = logging.getLogger('aiohttp.access')
     access_log.setLevel(logging.INFO)
